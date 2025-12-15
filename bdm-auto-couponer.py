@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 class BDMAutoCouponer:
     family_name: str
     region: str
+    interval: int
     redeemed: dict
   
     def __init__(self):
@@ -26,12 +27,13 @@ class BDMAutoCouponer:
         if (not self.region):
             logging.error("Region not set in configuration.")
             exit(1)
+        self.interval = config.get("interval", 86400)
         print(f"Family Name: {self.family_name}, Region: {self.region}")
         self.redeemed = self.load_redeemed()
         
 
     def load_config(self):
-        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        config_path = os.path.join(os.path.dirname(__file__), "config", "config.json")
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -40,7 +42,7 @@ class BDMAutoCouponer:
             exit(1)
 
     def load_redeemed(self):
-        redeemed_path = os.path.join(os.path.dirname(__file__), "redeemed.json")
+        redeemed_path = os.path.join(os.path.dirname(__file__), "cache", "redeemed.json")
         try:
             with open(redeemed_path, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -48,7 +50,7 @@ class BDMAutoCouponer:
             return {}
     
     def save_redeemed(self):
-        redeemed_path = os.path.join(os.path.dirname(__file__), "redeemed.json")
+        redeemed_path = os.path.join(os.path.dirname(__file__), "cache", "redeemed.json")
         try:
             with open(redeemed_path, "w", encoding="utf-8") as f:
                 json.dump(self.redeemed, f, indent=4)
@@ -115,28 +117,33 @@ class BDMAutoCouponer:
         # Main logic for the BDM Auto Couponer
         print("Running BDM Auto Couponer...")
         self.init()
-        available_coupons = self.get_available_coupons()
-        for coupon in available_coupons:
-            if coupon in self.redeemed:
-                print(f"Coupon '{coupon}' already redeemed on {self.redeemed[coupon]}. Skipping.")
-                continue
-            print(f"Submitting coupon '{coupon}'...")
-            result = self.submit_coupon(coupon)
-            if result:
-                if result.get("resultCode") == 0:
-                    print(f"Coupon '{coupon}' redeemed successfully!")
-                    self.mark_redeemed(coupon)
-                elif result.get("resultCode") == -20007:
-                    print(f"Coupon '{coupon}' has already been used.")
-                    self.mark_redeemed(coupon)
-                elif result.get("resultCode") == -20006:
-                    print(f"Coupon '{coupon}' is expired.")
-                    self.mark_redeemed(coupon)
+        
+        while True:
+            
+            available_coupons = self.get_available_coupons()
+            for coupon in available_coupons:
+                if coupon in self.redeemed:
+                    print(f"Coupon '{coupon}' already redeemed on {self.redeemed[coupon]}. Skipping.")
+                    continue
+                print(f"Submitting coupon '{coupon}'...")
+                result = self.submit_coupon(coupon)
+                if result:
+                    if result.get("resultCode") == 0:
+                        print(f"Coupon '{coupon}' redeemed successfully!")
+                        self.mark_redeemed(coupon)
+                    elif result.get("resultCode") == -20007:
+                        print(f"Coupon '{coupon}' has already been used.")
+                        self.mark_redeemed(coupon)
+                    elif result.get("resultCode") == -20006:
+                        print(f"Coupon '{coupon}' is expired.")
+                        self.mark_redeemed(coupon)
+                    else:
+                        error_msg = result.get("resultMsg", "Unknown error")
+                        print(f"Failed to redeem coupon '{coupon}': {error_msg}")
                 else:
-                    error_msg = result.get("resultMsg", "Unknown error")
-                    print(f"Failed to redeem coupon '{coupon}': {error_msg}")
-            else:
-                print(f"Failed to redeem coupon '{coupon}': No response from server.")
+                    print(f"Failed to redeem coupon '{coupon}': No response from server.")
+            print(f"Waiting for {self.interval} seconds before next check...")
+            time.sleep(self.interval)
 
 
 if __name__ == "__main__":
